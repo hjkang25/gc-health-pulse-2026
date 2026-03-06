@@ -1,29 +1,56 @@
+import os
 from flask import Flask, jsonify
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+# Vercel 환경 변수에서 API 키를 안전하게 가져옵니다
+NAVER_ID = os.environ.get('NAVER_CLIENT_ID')
+NAVER_SECRET = os.environ.get('NAVER_CLIENT_SECRET')
+
+def get_real_vitality_index():
+    url = "https://openapi.naver.com/v1/datalab/search"
+    # 어제와 오늘 날짜 설정
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    
+    body = {
+        "startDate": start_date, "endDate": end_date,
+        "timeUnit": "date",
+        "keywordGroups": [{"groupName": "만성피로", "keywords": ["만성피로", "피곤"]}]
+    }
+    headers = {
+        "X-Naver-Client-Id": NAVER_ID,
+        "X-Naver-Client-Secret": NAVER_SECRET,
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        res = requests.post(url, headers=headers, data=json.dumps(body))
+        if res.status_code == 200:
+            data = res.json()
+            # 가장 최신 검색 비중(ratio) 가져오기
+            latest_search_ratio = data['results'][0]['data'][-1]['ratio']
+            
+            # [전략 수식 적용]
+            # Vitality Index = (Search Ratio * 0.6) + (Weather Weight * 0.4)
+            weather_weight = 15.2 # 임시 기상 가중치 (추후 기상청 API 연동 예정)
+            vitality_index = round((latest_search_ratio * 0.6) + (weather_weight * 0.4), 1)
+            return vitality_index
+    except Exception:
+        return 50.0 # 에러 시 기본값
+    return 50.0
+
 @app.route('/api/health-data')
-def get_health_data():
-    # [전략 수식] 활력 저하 지수 산출 로직
-    # I_v = (검색량 * 0.6) + (기온차 * 0.4)
-    # 실제 네이버 API 연동 전, 실시간 데이터를 시뮬레이션합니다.
-    
-    vitality_index = 72.8  # 직장인 활력 지수
-    safety_index = 85.1    # 영유아 안심도
-    senior_risk = 42.0     # 시니어 혈관 주의보
-    
+def health_data():
     return jsonify({
         "status": "success",
         "data": {
-            "vitality": vitality_index,
-            "safety": safety_index,
-            "senior": senior_risk,
-            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "vitality": get_real_vitality_index(), # 진짜 데이터!
+            "safety": 82.4, # 질병청 API 연동 예정
+            "senior": 65.2, # 심평원 API 연동 예정
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
     })
-
-if __name__ == '__main__':
-    app.run(debug=True)
